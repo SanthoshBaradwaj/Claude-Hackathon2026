@@ -94,6 +94,7 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { state, setField, toggleCategory, next, back } = useOnboarding();
   const [submitting, setSubmitting] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('');
   const [showCatError, setShowCatError] = useState(false);
 
   // Already completed — skip straight to feed
@@ -112,6 +113,8 @@ export default function OnboardingPage() {
         localStorage.setItem('pulse_session_id', sessionId);
       }
 
+      // 1. Save profile + categories
+      setLoadingMessage('Saving your profile…');
       const profileRes = await fetch('/api/user/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -128,19 +131,25 @@ export default function OnboardingPage() {
       });
       const { user } = await profileRes.json();
 
+      // 2. Ingest news for the user's chosen categories
+      setLoadingMessage('Finding news for your topics…');
       if (user?.id) {
-        // Fire-and-forget — ingest personalized articles in background
-        fetch('/api/news/ingest', {
+        await fetch('/api/news/ingest', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ userId: user.id }),
         }).catch(() => {});
       }
 
+      // 3. Generate prompts for any newly ingested articles
+      setLoadingMessage('Preparing your prompts…');
+      await fetch('/api/prompts/generate', { method: 'POST' }).catch(() => {});
+
       localStorage.setItem('pulse_onboarding_complete', 'true');
       router.push('/');
     } catch {
       setSubmitting(false);
+      setLoadingMessage('');
     }
   }
 
@@ -193,7 +202,11 @@ export default function OnboardingPage() {
             </StepShell>
           )}
           {state.step === 5 && (
-            <Step5Done onComplete={handleComplete} submitting={submitting} />
+            <Step5Done
+              onComplete={handleComplete}
+              submitting={submitting}
+              loadingMessage={loadingMessage}
+            />
           )}
         </motion.div>
       </AnimatePresence>
@@ -556,9 +569,11 @@ function Step4Categories({
 function Step5Done({
   onComplete,
   submitting,
+  loadingMessage,
 }: {
   onComplete: () => void;
   submitting: boolean;
+  loadingMessage: string;
 }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
@@ -586,20 +601,39 @@ function Step5Done({
           </p>
         </motion.div>
 
-        <motion.button
+        <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.9, duration: 0.4 }}
-          onClick={onComplete}
-          disabled={submitting}
-          className="mt-4 flex items-center gap-2 rounded-full bg-[#7c6aff] px-8 py-4 text-base font-semibold text-white shadow-[0_4px_24px_rgba(124,106,255,0.4)] transition-all hover:scale-105 hover:shadow-[0_6px_32px_rgba(124,106,255,0.5)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex flex-col items-center gap-3"
         >
-          {submitting ? (
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-          ) : (
-            <>See today's prompts <span>→</span></>
-          )}
-        </motion.button>
+          <button
+            onClick={onComplete}
+            disabled={submitting}
+            className="mt-4 flex items-center gap-2 rounded-full bg-[#7c6aff] px-8 py-4 text-base font-semibold text-white shadow-[0_4px_24px_rgba(124,106,255,0.4)] transition-all hover:scale-105 hover:shadow-[0_6px_32px_rgba(124,106,255,0.5)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting ? (
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+            ) : (
+              <>See today's prompts <span>→</span></>
+            )}
+          </button>
+
+          <AnimatePresence mode="wait">
+            {loadingMessage && (
+              <motion.p
+                key={loadingMessage}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="text-xs text-white/35"
+              >
+                {loadingMessage}
+              </motion.p>
+            )}
+          </AnimatePresence>
+        </motion.div>
       </div>
     </div>
   );
