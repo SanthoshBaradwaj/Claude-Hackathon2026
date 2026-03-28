@@ -6,11 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed": "tsx --env-file=.env.local scripts/seed.ts",
+    "generate-prompts": "tsx --env-file=.env.local scripts/generate-all-prompts.ts",
+    "compute-clusters": "tsx --env-file=.env.local scripts/compute-all-clusters.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",
     "@supabase/supabase-js": "^2.100.1",
+    "canvas-confetti": "^1.9.4",
+    "density-clustering": "^1.3.0",
     "framer-motion": "^12.38.0",
     "ml-kmeans": "^7.0.0",
     "next": "16.2.1",
@@ -20,12 +25,15 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/density-clustering": "^1.3.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

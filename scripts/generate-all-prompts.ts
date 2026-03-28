@@ -1,3 +1,5 @@
+export {}; // make this file a module
+
 /**
  * Run with: npx ts-node -r tsconfig-paths/register scripts/generate-all-prompts.ts
  * Or: npx tsx scripts/generate-all-prompts.ts

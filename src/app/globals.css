@@ -1,26 +1,115 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* ─── Design tokens ──────────────────────────────────────────── */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: #08080f;
+  --color-violet: #7c6aff;
+  --color-violet-dim: #5a4fd6;
+  --color-teal: #2dd4bf;
+  --color-surface: rgba(255, 255, 255, 0.03);
+
+  --font-display: var(--font-dm-serif);
+  --font-body: var(--font-outfit);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ─── Base ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { height: 100%; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #08080f;
+  color: #f0f0ff;
+  font-family: var(--font-outfit, 'Outfit', system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Noise texture overlay — CSS only, no image files */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 300px 300px;
+  opacity: 0.035;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ─── Typography helpers ─────────────────────────────────────── */
+.font-display {
+  font-family: var(--font-dm-serif, 'DM Serif Display', Georgia, serif);
+}
+.font-body {
+  font-family: var(--font-outfit, 'Outfit', system-ui, sans-serif);
+}
+
+/* ─── Animations ─────────────────────────────────────────────── */
+
+/* Slow gradient orb drift */
+@keyframes orbDrift {
+  0%,  100% { transform: translate(0,     0)     scale(1);    }
+  25%        { transform: translate(40px, -30px)  scale(1.08); }
+  50%        { transform: translate(-20px, 50px)  scale(0.95); }
+  75%        { transform: translate(-40px, -20px) scale(1.04); }
+}
+
+/* Morphing blob */
+@keyframes blobMorph {
+  0%,  100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  25%        { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
+  50%        { border-radius: 50% 60% 30% 60% / 30% 60% 70% 40%; }
+  75%        { border-radius: 60% 30% 60% 40% / 70% 50% 60% 30%; }
+}
+
+/* Phrase fade-up */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+/* Card shimmer skeleton */
+@keyframes shimmer {
+  from { background-position: -400px 0; }
+  to   { background-position:  400px 0; }
+}
+
+.animate-orb-drift  { animation: orbDrift   18s ease-in-out infinite; }
+.animate-blob-morph { animation: blobMorph   8s ease-in-out infinite; }
+.animate-fade-up    { animation: fadeUp     0.5s ease forwards;        }
+
+.skeleton {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 400px 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* ─── Glassmorphism card surface ─────────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.glass:hover {
+  border-color: rgba(124, 106, 255, 0.35);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 40px rgba(124, 106, 255, 0.14);
+}
+
+/* ─── Violet glow focus ring ─────────────────────────────────── */
+.glow-focus:focus {
+  outline: none;
+  border-color: rgba(124, 106, 255, 0.6);
+  box-shadow: 0 0 0 3px rgba(124, 106, 255, 0.12), 0 0 20px rgba(124, 106, 255, 0.08);
+}
+
+/* ─── Gradient button ────────────────────────────────────────── */
+.btn-gradient {
+  background: linear-gradient(135deg, #7c6aff 0%, #2dd4bf 100%);
+}
+.btn-gradient:disabled {
+  background: rgba(255, 255, 255, 0.08);
 }
