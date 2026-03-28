@@ -96,11 +96,15 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('');
   const [showCatError, setShowCatError] = useState(false);
+  // Block render until localStorage is checked — prevents flash before redirect
+  const [ready, setReady] = useState(false);
 
-  // Already completed — skip straight to feed
   useEffect(() => {
     if (localStorage.getItem('pulse_onboarding_complete') === 'true') {
       router.replace('/');
+      // Don't set ready — we're navigating away
+    } else {
+      setReady(true);
     }
   }, [router]);
 
@@ -161,6 +165,8 @@ export default function OnboardingPage() {
     setShowCatError(false);
     next();
   }
+
+  if (!ready) return null;
 
   const showBottomNav = state.step >= 1 && state.step <= 4;
 
