@@ -94,7 +94,6 @@ export default function OnboardingPage() {
   const router = useRouter();
   const { state, setField, toggleCategory, next, back } = useOnboarding();
   const [submitting, setSubmitting] = useState(false);
-  const [loadingMessage, setLoadingMessage] = useState('');
   const [showCatError, setShowCatError] = useState(false);
   // Block render until localStorage is checked — prevents flash before redirect
   const [ready, setReady] = useState(false);
@@ -108,53 +107,46 @@ export default function OnboardingPage() {
     }
   }, [router]);
 
-  async function handleComplete() {
+  function handleComplete() {
     setSubmitting(true);
-    try {
-      let sessionId = localStorage.getItem('pulse_session_id');
-      if (!sessionId) {
-        sessionId = crypto.randomUUID();
-        localStorage.setItem('pulse_session_id', sessionId);
-      }
 
-      // 1. Save profile + categories
-      setLoadingMessage('Saving your profile…');
-      const profileRes = await fetch('/api/user/profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          ageBand: state.ageBand,
-          gender: state.gender || undefined,
-          pronouns: state.pronouns || undefined,
-          occupation: state.occupation,
-          educationLevel: state.educationLevel,
-          location: state.location,
-          selectedCategories: state.categories,
-        }),
-      });
-      const { user } = await profileRes.json();
-
-      // 2. Ingest news for the user's chosen categories
-      setLoadingMessage('Finding news for your topics…');
-      if (user?.id) {
-        await fetch('/api/news/ingest', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: user.id }),
-        }).catch(() => {});
-      }
-
-      // 3. Generate prompts for any newly ingested articles
-      setLoadingMessage('Preparing your prompts…');
-      await fetch('/api/prompts/generate', { method: 'POST' }).catch(() => {});
-
-      localStorage.setItem('pulse_onboarding_complete', 'true');
-      router.push('/');
-    } catch {
-      setSubmitting(false);
-      setLoadingMessage('');
+    let sessionId = localStorage.getItem('pulse_session_id');
+    if (!sessionId) {
+      sessionId = crypto.randomUUID();
+      localStorage.setItem('pulse_session_id', sessionId);
     }
+
+    // Fire-and-forget: save profile → ingest → generate, all in background
+    fetch('/api/user/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId,
+        ageBand: state.ageBand,
+        gender: state.gender || undefined,
+        pronouns: state.pronouns || undefined,
+        occupation: state.occupation,
+        educationLevel: state.educationLevel,
+        location: state.location,
+        selectedCategories: state.categories,
+      }),
+    })
+      .then((r) => r.json())
+      .then(({ user }) => {
+        if (user?.id) {
+          return fetch('/api/news/ingest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: user.id }),
+          });
+        }
+      })
+      .then(() => fetch('/api/prompts/generate', { method: 'POST' }))
+      .catch(() => {});
+
+    // Redirect immediately — don't wait for any API call
+    localStorage.setItem('pulse_onboarding_complete', 'true');
+    router.push('/');
   }
 
   function handleContinue() {
@@ -211,7 +203,6 @@ export default function OnboardingPage() {
             <Step5Done
               onComplete={handleComplete}
               submitting={submitting}
-              loadingMessage={loadingMessage}
             />
           )}
         </motion.div>
@@ -575,11 +566,9 @@ function Step4Categories({
 function Step5Done({
   onComplete,
   submitting,
-  loadingMessage,
 }: {
   onComplete: () => void;
   submitting: boolean;
-  loadingMessage: string;
 }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
@@ -625,20 +614,6 @@ function Step5Done({
             )}
           </button>
 
-          <AnimatePresence mode="wait">
-            {loadingMessage && (
-              <motion.p
-                key={loadingMessage}
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
-                className="text-xs text-white/35"
-              >
-                {loadingMessage}
-              </motion.p>
-            )}
-          </AnimatePresence>
         </motion.div>
       </div>
     </div>
