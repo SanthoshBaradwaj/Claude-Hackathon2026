@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { DM_Serif_Display, Outfit } from 'next/font/google';
 import './globals.css';
+import { OnboardingGuard } from '@/components/OnboardingGuard';
 
 const dmSerif = DM_Serif_Display({
   weight: '400',
@@ -24,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${dmSerif.variable} ${outfit.variable} h-full`}>
       <body className="min-h-full bg-[#08080f] text-[#f0f0ff] antialiased">
-        {children}
+        <OnboardingGuard>{children}</OnboardingGuard>
       </body>
     </html>
   );

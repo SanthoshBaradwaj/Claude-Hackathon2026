@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,6 +8,8 @@ import {
   BarChart,
   Bar,
   XAxis,
+  YAxis,
+  CartesianGrid,
   Cell,
   ResponsiveContainer,
   Tooltip,
@@ -27,10 +29,25 @@ interface ClusterDist {
   isNoise: boolean;
 }
 
+interface BreakdownValue {
+  value: string;
+  count: number;
+  percentage: number;
+}
+interface BreakdownDimension {
+  dimension: string;
+  values: BreakdownValue[];
+}
+interface ClusterBreakdown {
+  clusterId: string;
+  dimensions: BreakdownDimension[];
+}
+
 interface ResultsData {
   clusters: { id: string; label: string; member_count: number; percentage: number; cluster_index: number }[];
   userCluster: { id: string; label: string; percentage: number; cluster_index: number } | null;
   distribution: ClusterDist[];
+  breakdowns: ClusterBreakdown[];
   voices: {
     similar: string[];
     opposing: string[];
@@ -107,7 +124,7 @@ export default function ResultsPage() {
     );
   }
 
-  const { userCluster, distribution, voices } = data;
+  const { userCluster, distribution, voices, breakdowns = [], clusters } = data;
   const isNoise = userCluster?.cluster_index === NOISE_CLUSTER_INDEX;
   const userColorIndex = !userCluster
     ? 0
@@ -250,11 +267,7 @@ export default function ResultsPage() {
                       data={[{ pct: cluster.percentage }]}
                       margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
                     >
-                      <XAxis
-                        type="number"
-                        domain={[0, 100]}
-                        hide
-                      />
+                      <XAxis type="number" domain={[0, 100]} hide />
                       <Bar
                         dataKey="pct"
                         radius={[0, 4, 4, 0]}
@@ -264,10 +277,7 @@ export default function ResultsPage() {
                       >
                         <Cell fill={cluster.color} opacity={cluster.isUser ? 1 : 0.45} />
                       </Bar>
-                      <Tooltip
-                        cursor={false}
-                        content={() => null}
-                      />
+                      <Tooltip cursor={false} content={() => null} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -284,7 +294,6 @@ export default function ResultsPage() {
         {/* ── Section 3: Voice cards ────────────────────────────── */}
         <div className="mx-auto max-w-2xl space-y-10 px-5">
 
-          {/* Similar Voices */}
           {voices.similar.length > 0 && (
             <VoiceSection
               title="Similar voices"
@@ -296,7 +305,6 @@ export default function ResultsPage() {
             />
           )}
 
-          {/* Opposing Views */}
           {voices.opposing.length > 0 && (
             <VoiceSection
               title="Opposing views"
@@ -308,7 +316,6 @@ export default function ResultsPage() {
             />
           )}
 
-          {/* Middle Ground */}
           {voices.middle.length > 0 && (
             <VoiceSection
               title="The middle ground"
@@ -320,6 +327,15 @@ export default function ResultsPage() {
             />
           )}
         </div>
+
+        {/* ── Section 4: Demographic breakdown ─────────────────── */}
+        <DemographicBreakdown
+          distribution={distribution}
+          breakdowns={breakdowns}
+          clusters={clusters}
+          revealed={revealed}
+        />
+
       </motion.div>
 
       {/* ── Fixed bottom CTA ─────────────────────────────────── */}
@@ -390,6 +406,286 @@ function VoiceSection({
           </motion.blockquote>
         ))}
       </motion.div>
+    </motion.section>
+  );
+}
+
+/* ── Demographic breakdown section ────────────────────────────── */
+
+const DIMENSIONS = [
+  { key: 'age_band',   label: 'Age' },
+  { key: 'occupation', label: 'Occupation' },
+  { key: 'education',  label: 'Education' },
+  { key: 'location',   label: 'Location' },
+  { key: 'gender',     label: 'Gender' },
+] as const;
+
+const AGE_SORT_ORDER = ['Under 18', '18–24', '25–34', '35–44', '45–54', '55+'];
+
+type ChartPoint = { name: string } & { [key: string]: string | number };
+
+function getBreakdownPct(
+  breakdowns: ClusterBreakdown[],
+  clusterId: string,
+  dimension: string,
+  value: string
+): number {
+  const b = breakdowns.find((bd) => bd.clusterId === clusterId);
+  const dim = b?.dimensions.find((d) => d.dimension === dimension);
+  return dim?.values.find((v) => v.value === value)?.percentage ?? 0;
+}
+
+function buildChartData(
+  distribution: ClusterDist[],
+  breakdowns: ClusterBreakdown[],
+  dimension: string
+): ChartPoint[] {
+  const allValues = new Set<string>();
+  for (const b of breakdowns) {
+    const dim = b.dimensions.find((d) => d.dimension === dimension);
+    if (dim) dim.values.forEach((v) => allValues.add(v.value));
+  }
+
+  let values = [...allValues];
+
+  if (dimension === 'age_band') {
+    values.sort((a, b) => {
+      const ai = AGE_SORT_ORDER.indexOf(a);
+      const bi = AGE_SORT_ORDER.indexOf(b);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+  } else {
+    values.sort();
+  }
+
+  return values
+    .map((val) => {
+      const point: ChartPoint = { name: val };
+      for (const cluster of distribution) {
+        point[cluster.label] = parseFloat(
+          getBreakdownPct(breakdowns, cluster.id, dimension, val).toFixed(1)
+        );
+      }
+      return point;
+    })
+    .filter((point) => distribution.some((c) => (point[c.label] as number) > 0));
+}
+
+function computeInsight(chartData: ChartPoint[], distribution: ClusterDist[]): string | null {
+  if (chartData.length === 0 || distribution.length < 2) return null;
+
+  let maxDiff = 0;
+  let best: { name: string; top: string; second: string; diff: number } | null = null;
+
+  for (const point of chartData) {
+    const ranked = distribution
+      .map((c) => ({ label: c.label, pct: (point[c.label] as number) ?? 0 }))
+      .sort((a, b) => b.pct - a.pct);
+
+    if (ranked[0].pct === 0) continue;
+    const diff = ranked[0].pct - (ranked[1]?.pct ?? 0);
+    if (diff > maxDiff) {
+      maxDiff = diff;
+      best = { name: point.name, top: ranked[0].label, second: ranked[1]?.label ?? '', diff };
+    }
+  }
+
+  if (!best || best.diff < 5) return null;
+  return `${best.name} respondents lean ${best.top} by ${Math.round(best.diff)}pp vs ${best.second}`;
+}
+
+function shouldShowGender(breakdowns: ClusterBreakdown[], totalMembers: number): boolean {
+  let genderCount = 0;
+  for (const b of breakdowns) {
+    const dim = b.dimensions.find((d) => d.dimension === 'gender');
+    if (dim) genderCount += dim.values.reduce((s, v) => s + v.count, 0);
+  }
+  return totalMembers > 0 && genderCount / totalMembers > 0.3;
+}
+
+function DemoTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: { dataKey: string; value: number; fill: string }[];
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  const relevant = payload.filter((e) => e.value > 0);
+  if (!relevant.length) return null;
+  return (
+    <div className="rounded-xl border border-white/10 bg-[#0d0d1a]/95 px-3 py-2.5 text-xs shadow-xl backdrop-blur-sm">
+      <p className="mb-2 font-medium text-white/50">{label}</p>
+      {relevant.map((entry) => (
+        <div key={entry.dataKey} className="flex items-center gap-2 py-0.5">
+          <span
+            className="h-2 w-2 flex-shrink-0 rounded-full"
+            style={{ background: entry.fill }}
+          />
+          <span className="text-white/65">
+            Cluster: {entry.dataKey} — {entry.value.toFixed(1)}% of this cluster are {label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DemographicBreakdown({
+  distribution,
+  breakdowns,
+  clusters,
+  revealed,
+}: {
+  distribution: ClusterDist[];
+  breakdowns: ClusterBreakdown[];
+  clusters: { id: string; member_count: number }[];
+  revealed: boolean;
+}) {
+  const [activeDim, setActiveDim] = useState<string>('age_band');
+
+  const totalMembers = useMemo(
+    () => clusters.reduce((s, c) => s + c.member_count, 0),
+    [clusters]
+  );
+
+  const showGender = useMemo(
+    () => shouldShowGender(breakdowns, totalMembers),
+    [breakdowns, totalMembers]
+  );
+
+  const availableDims = DIMENSIONS.filter((d) => d.key !== 'gender' || showGender);
+
+  // Keep activeDim valid if dimensions change
+  const currentDim = availableDims.some((d) => d.key === activeDim)
+    ? activeDim
+    : (availableDims[0]?.key ?? 'age_band');
+
+  const chartData = useMemo(
+    () => buildChartData(distribution, breakdowns, currentDim),
+    [distribution, breakdowns, currentDim]
+  );
+
+  const insight = useMemo(
+    () => computeInsight(chartData, distribution),
+    [chartData, distribution]
+  );
+
+  if (!breakdowns.length || distribution.length === 0) return null;
+  if (chartData.length === 0 && availableDims.every(
+    (d) => buildChartData(distribution, breakdowns, d.key).length === 0
+  )) return null;
+
+  const minChartWidth = Math.max(380, chartData.length * 90);
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: revealed ? 1 : 0, y: revealed ? 0 : 20 }}
+      transition={{ duration: 0.5, delay: 2.8 }}
+      className="mx-auto mb-12 mt-12 max-w-2xl px-5"
+    >
+      <h2 className="font-display mb-6 text-2xl text-white sm:text-3xl">
+        Who thinks this way?
+      </h2>
+
+      <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-5">
+
+        {/* Dimension toggle bar */}
+        <div className="mb-5 flex flex-wrap gap-2">
+          {availableDims.map((d) => (
+            <button
+              key={d.key}
+              onClick={() => setActiveDim(d.key)}
+              className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-all duration-200 ${
+                currentDim === d.key
+                  ? 'bg-[#7c6aff] text-white shadow-[0_2px_12px_rgba(124,106,255,0.35)]'
+                  : 'border border-white/10 text-white/45 hover:border-white/20 hover:text-white/65'
+              }`}
+            >
+              {d.label}
+            </button>
+          ))}
+        </div>
+
+        {chartData.length === 0 ? (
+          <p className="py-8 text-center text-xs text-white/25">
+            No {availableDims.find((d) => d.key === currentDim)?.label.toLowerCase()} data yet
+          </p>
+        ) : (
+          <>
+            {/* Chart — horizontally scrollable on mobile */}
+            <div className="overflow-x-auto">
+              <div style={{ minWidth: minChartWidth }}>
+                <ResponsiveContainer key={currentDim} width="100%" height={220}>
+                  <BarChart
+                    data={chartData}
+                    barGap={2}
+                    barCategoryGap="22%"
+                    margin={{ top: 4, right: 8, bottom: 4, left: -12 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="rgba(255,255,255,0.05)"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      tick={{ fill: 'rgba(255,255,255,0.3)', fontSize: 10 }}
+                      tickLine={false}
+                      axisLine={false}
+                      unit="%"
+                      domain={[0, 'dataMax + 10']}
+                    />
+                    <Tooltip
+                      content={<DemoTooltip />}
+                      cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+                    />
+                    {distribution.map((cluster) => (
+                      <Bar
+                        key={cluster.id}
+                        dataKey={cluster.label}
+                        fill={cluster.color}
+                        opacity={0.85}
+                        radius={[3, 3, 0, 0]}
+                        animationBegin={0}
+                        animationDuration={600}
+                      />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Custom legend */}
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+              {distribution.map((cluster) => (
+                <div key={cluster.id} className="flex items-center gap-1.5">
+                  <span
+                    className="h-2 w-2 flex-shrink-0 rounded-full"
+                    style={{ background: cluster.color }}
+                  />
+                  <span className="text-xs text-white/40">{cluster.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Insight callout */}
+            {insight && (
+              <div className="mt-4 rounded-xl border-l-[3px] border-[#7c6aff] bg-[#7c6aff]/5 px-4 py-3">
+                <p className="text-sm leading-relaxed text-white/60">{insight}</p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </motion.section>
   );
 }

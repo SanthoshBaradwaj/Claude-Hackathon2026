@@ -32,10 +32,27 @@ export async function POST(req: NextRequest) {
       prompt.active_prompt_type === 'factual' ? prompt.factual_prompt :
       prompt.balanced_prompt;
 
-    // Store the response (UNIQUE constraint prevents duplicates)
+    // Fetch user demographics for snapshotting
+    const { data: userRecord } = await supabaseAdmin
+      .from('users')
+      .select('age_band, occupation, education_level, location, gender')
+      .eq('id', userId)
+      .single();
+
+    // Store the response with demographic snapshot (UNIQUE constraint prevents duplicates)
     const { data: response, error: responseError } = await supabaseAdmin
       .from('responses')
-      .insert({ user_id: userId, prompt_id: promptId, raw_text: rawText.trim(), input_method: inputMethod })
+      .insert({
+        user_id: userId,
+        prompt_id: promptId,
+        raw_text: rawText.trim(),
+        input_method: inputMethod,
+        age_band_snapshot: userRecord?.age_band ?? null,
+        occupation_snapshot: userRecord?.occupation ?? null,
+        education_snapshot: userRecord?.education_level ?? null,
+        location_snapshot: userRecord?.location ?? null,
+        gender_snapshot: userRecord?.gender ?? null,
+      })
       .select()
       .single();
 

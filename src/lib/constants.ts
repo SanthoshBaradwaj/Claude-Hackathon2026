@@ -1,3 +1,28 @@
+// ── News categories ───────────────────────────────────────────────
+export const NEWS_CATEGORIES = [
+  'technology', 'climate', 'business', 'health', 'sports',
+] as const;
+
+export type NewsCategory = typeof NEWS_CATEGORIES[number];
+
+export const CATEGORY_ADJACENCY: Record<NewsCategory, NewsCategory[]> = {
+  technology: ['business'],
+  climate:    ['health'],
+  business:   ['technology'],
+  health:     ['climate'],
+  sports:     ['health'],
+};
+
+export const MIN_PROMPTS_FLOOR = 10;
+
+export const GNEWS_CATEGORY_MAP: Record<NewsCategory, string> = {
+  technology: 'technology',
+  climate:    'science',   // GNews uses 'science' for climate content
+  business:   'business',
+  health:     'health',
+  sports:     'sports',
+};
+
 // ── DBSCAN clustering parameters ─────────────────────────────────
 // Tune epsilon: higher = fewer larger clusters, lower = more smaller clusters / more noise
 export const DBSCAN_EPSILON = 0.35;

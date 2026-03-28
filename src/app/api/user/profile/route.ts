@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase/server';
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { sessionId, ageBand, gender, location, pronouns } = body;
+    const { sessionId, ageBand, gender, location, pronouns, occupation, educationLevel, selectedCategories } = body;
 
     if (!sessionId) {
       return NextResponse.json({ error: 'sessionId is required' }, { status: 400 });
@@ -15,6 +15,9 @@ export async function POST(req: NextRequest) {
     if (gender !== undefined) upsertPayload.gender = gender;
     if (location !== undefined) upsertPayload.location = location;
     if (pronouns !== undefined) upsertPayload.pronouns = pronouns;
+    if (occupation !== undefined) upsertPayload.occupation = occupation;
+    if (educationLevel !== undefined) upsertPayload.education_level = educationLevel;
+    if (selectedCategories !== undefined) upsertPayload.selected_categories = selectedCategories;
 
     const { data: user, error } = await supabaseAdmin
       .from('users')

@@ -156,6 +156,78 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from('user_cluster_assignments').insert(assignmentRows);
     }
 
+    // ── 7. Compute demographic breakdowns ─────────────────────────────────
+    // Fetch response demographic snapshots for all responses in this prompt
+    const { data: demoSnapshots } = await supabaseAdmin
+      .from('responses')
+      .select('id, age_band_snapshot, occupation_snapshot, education_snapshot, location_snapshot, gender_snapshot')
+      .in('id', responseIds);
+
+    const snapshotMap = new Map(
+      (demoSnapshots ?? []).map((r: {
+        id: string;
+        age_band_snapshot: string | null;
+        occupation_snapshot: string | null;
+        education_snapshot: string | null;
+        location_snapshot: string | null;
+        gender_snapshot: string | null;
+      }) => [r.id, r])
+    );
+
+    const dimensions = [
+      { key: 'age_band',   col: 'age_band_snapshot'   },
+      { key: 'occupation', col: 'occupation_snapshot'  },
+      { key: 'education',  col: 'education_snapshot'   },
+      { key: 'location',   col: 'location_snapshot'    },
+      { key: 'gender',     col: 'gender_snapshot'      },
+    ] as const;
+
+    // Delete existing breakdowns for clusters belonging to this prompt
+    const storedClusterIds = storedClusters.map((c: { id: string }) => c.id);
+    await supabaseAdmin
+      .from('cluster_demographic_breakdowns')
+      .delete()
+      .in('cluster_id', storedClusterIds);
+
+    const breakdownRows: {
+      cluster_id: string;
+      dimension: string;
+      dimension_value: string;
+      count: number;
+      percentage: number;
+    }[] = [];
+
+    for (const [clusterIdx, memberIndices] of clusterMap.entries()) {
+      const dbCluster = storedByIndex.get(clusterIdx);
+      if (!dbCluster) continue;
+
+      const memberResponseIds = memberIndices
+        .map((i) => validFactors[i].response_id)
+        .filter(Boolean);
+
+      for (const { key, col } of dimensions) {
+        const valueCounts = new Map<string, number>();
+        for (const rid of memberResponseIds) {
+          const snap = snapshotMap.get(rid);
+          const val = snap?.[col];
+          if (val) valueCounts.set(val, (valueCounts.get(val) ?? 0) + 1);
+        }
+        for (const [dimValue, count] of valueCounts.entries()) {
+          breakdownRows.push({
+            cluster_id: dbCluster.id,
+            dimension: key,
+            dimension_value: dimValue,
+            count,
+            percentage: (count / memberIndices.length) * 100,
+          });
+        }
+      }
+    }
+
+    if (breakdownRows.length > 0) {
+      await supabaseAdmin.from('cluster_demographic_breakdowns').insert(breakdownRows);
+    }
+
     return NextResponse.json({
       clusters: storedClusters,
       assignments: assignmentRows,

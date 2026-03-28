@@ -4,12 +4,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
-import { supabase } from '@/lib/supabase/client';
 import { useSession } from '@/hooks/useSession';
 import { useUnlockStatus } from '@/hooks/useUnlockStatus';
 import type { Prompt, Article } from '@/types';
 
-type PromptWithArticle = Prompt & { article: Article | null };
+type PromptWithArticle = Prompt & { article: Article | null; is_adjacent_fill: boolean };
 
 const cardVariants = {
   hidden: { opacity: 0, y: 24 },
@@ -25,21 +24,45 @@ export default function Home() {
   const [prompts, setPrompts] = useState<PromptWithArticle[]>([]);
   const [fetching, setFetching] = useState(true);
 
-  const { isUnlocked, responsesCount, loading: sessionLoading } = useSession();
+  const { userId, isUnlocked, responsesCount, loading: sessionLoading } = useSession();
   const { remaining } = useUnlockStatus(responsesCount, isUnlocked);
 
   useEffect(() => {
-    supabase
-      .from('prompts')
-      .select('*, article:articles(*)')
-      .in('safety_category', ['safe', 'sensitive'])
-      .order('created_at', { ascending: false })
-      .limit(20)
-      .then(({ data }) => {
-        setPrompts((data as PromptWithArticle[]) || []);
-        setFetching(false);
-      });
-  }, []);
+    if (sessionLoading) return;
+
+    // Fetch user's selected categories then load filtered feed
+    async function loadFeed() {
+      let categoriesParam = '';
+
+      if (userId) {
+        try {
+          const profileRes = await fetch('/api/user/profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: localStorage.getItem('pulse_session_id') }),
+          });
+          if (profileRes.ok) {
+            const { user } = await profileRes.json();
+            const cats: string[] = user?.selected_categories ?? [];
+            if (cats.length > 0) {
+              categoriesParam = `?categories=${cats.join(',')}`;
+            }
+          }
+        } catch {
+          // Non-fatal — fall back to all categories
+        }
+      }
+
+      const res = await fetch(`/api/prompts${categoriesParam}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPrompts(Array.isArray(data) ? data : []);
+      }
+      setFetching(false);
+    }
+
+    loadFeed();
+  }, [sessionLoading, userId]);
 
   return (
     <div className="relative min-h-screen overflow-x-hidden">
@@ -190,6 +213,11 @@ function PromptCard({
               {isUnlocked && (
                 <span className="rounded-full bg-[#2dd4bf]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest text-[#2dd4bf]">
                   Results available
+                </span>
+              )}
+              {prompt.is_adjacent_fill && article?.category && (
+                <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-white/30">
+                  Related: {article.category}
                 </span>
               )}
             </div>

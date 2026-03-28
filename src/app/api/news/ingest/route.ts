@@ -1,10 +1,28 @@
-import { NextResponse } from 'next/server';
-import { fetchTopHeadlines } from '@/lib/news/provider';
+import { NextRequest, NextResponse } from 'next/server';
+import { fetchArticles } from '@/lib/news/provider';
 import { supabaseAdmin } from '@/lib/supabase/server';
+import { NEWS_CATEGORIES, NewsCategory } from '@/lib/constants';
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
-    const articles = await fetchTopHeadlines('general');
+    let categories: NewsCategory[] = [...NEWS_CATEGORIES];
+
+    // If userId provided, restrict to the user's selected categories
+    const body = await req.json().catch(() => ({})) as { userId?: string };
+    if (body.userId) {
+      const { data: user } = await supabaseAdmin
+        .from('users')
+        .select('selected_categories')
+        .eq('id', body.userId)
+        .single();
+
+      const userCats = (user?.selected_categories ?? []) as NewsCategory[];
+      if (userCats.length > 0) {
+        categories = userCats.filter((c) => (NEWS_CATEGORIES as readonly string[]).includes(c));
+      }
+    }
+
+    const articles = await fetchArticles(categories);
 
     if (articles.length === 0) {
       return NextResponse.json({ articles: [], count: 0 });

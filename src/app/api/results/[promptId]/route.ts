@@ -134,10 +134,46 @@ export async function GET(
       }
     );
 
+    // ── Fetch demographic breakdowns for all clusters ─────────────────────
+    const clusterIds = clusters.map((c: { id: string }) => c.id);
+    const { data: rawBreakdowns } = await supabaseAdmin
+      .from('cluster_demographic_breakdowns')
+      .select('cluster_id, dimension, dimension_value, count, percentage')
+      .in('cluster_id', clusterIds);
+
+    // Group breakdowns by clusterId → dimension → values[]
+    const breakdownMap = new Map<string, Map<string, { value: string; count: number; percentage: number }[]>>();
+    for (const row of (rawBreakdowns ?? []) as {
+      cluster_id: string;
+      dimension: string;
+      dimension_value: string;
+      count: number;
+      percentage: number;
+    }[]) {
+      if (!breakdownMap.has(row.cluster_id)) breakdownMap.set(row.cluster_id, new Map());
+      const dimMap = breakdownMap.get(row.cluster_id)!;
+      if (!dimMap.has(row.dimension)) dimMap.set(row.dimension, []);
+      dimMap.get(row.dimension)!.push({
+        value: row.dimension_value,
+        count: row.count,
+        percentage: row.percentage,
+      });
+    }
+
+    const breakdowns = clusterIds.map((cid: string) => {
+      const dimMap = breakdownMap.get(cid) ?? new Map<string, { value: string; count: number; percentage: number }[]>();
+      const dimensions: { dimension: string; values: { value: string; count: number; percentage: number }[] }[] = [];
+      for (const [dimension, values] of dimMap.entries()) {
+        dimensions.push({ dimension, values: values.sort((a, b) => b.count - a.count) as { value: string; count: number; percentage: number }[] });
+      }
+      return { clusterId: cid, dimensions };
+    });
+
     return NextResponse.json({
       clusters,
       userCluster,
       distribution,
+      breakdowns,
       voices: {
         similar:  similarVoices,
         opposing: opposingVoices,
